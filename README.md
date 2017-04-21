@@ -1,4 +1,21 @@
-# wrk - a HTTP benchmarking tool
+wrk
+===
+
+  A forked version of [wrk](https://github.com/wg/wrk). Several new features
+  are added, including:
+
+  * SSL session force release. You can use `--sslnocache` option to force SSL
+  session release right after connection closed. It is useful when pressuring
+  SSL handshake performance, e.g.
+
+```
+  wrk -t12 -c400 -d30s --sslnocache -H "Connection: close" https://127.0.0.1/
+```
+
+  * JSON output format. Add `--json` option to enable output statistics in
+  JSON format.
+
+## wrk - a HTTP benchmarking tool
 
   wrk is a modern HTTP benchmarking tool capable of generating significant
   load when run on a single multi-core CPU. It combines a multithreaded
@@ -46,6 +63,8 @@
 
         --sslnocache:  destroy SSL session after connection closed
 
+        --json:        output statistics in json format
+
 ## Benchmarking Tips
 
   The machine running wrk must have a sufficient number of ephemeral ports
@@ -62,8 +81,8 @@
 
   wrk contains code from a number of open source projects including the
   'ae' event loop from redis, the nginx/joyent/node.js 'http-parser',
-  and Mike Pall's LuaJIT. Please consult the NOTICE file for licensing
-  details.
+  Mike Pall's LuaJIT, and Dave Gamble's cJSON. Please consult the NOTICE
+  file for licensing details.
 
 ## Cryptography Notice
 

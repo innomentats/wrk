@@ -24,6 +24,7 @@
 #include "stats.h"
 #include "units.h"
 #include "zmalloc.h"
+#include "cJSON.h"
 
 struct config;
 
@@ -50,5 +51,9 @@ static char *copy_url_part(char *, struct http_parser_url *, enum http_parser_ur
 static void print_stats_header();
 static void print_stats(char *, stats *, char *(*)(long double));
 static void print_stats_latency(stats *);
+
+static void json_print(cJSON *res, const char *name, const char *fmt, ...);
+static void json_print_stats(cJSON *res, const char *name, stats *stats, char *(*fmt)(long double));
+static void json_print_stats_latency(cJSON *res, stats *stats);
 
 #endif /* MAIN_H */

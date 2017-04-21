@@ -14,6 +14,7 @@ static struct config {
     bool     dynamic;
     bool     latency;
     bool     sslnocache;
+    bool     json;
     char    *host;
     char    *script;
     SSL_CTX *ctx;
@@ -54,6 +55,7 @@ static void usage() {
            "        --latency          Print latency statistics   \n"
            "        --timeout     <T>  Socket/request timeout     \n"
            "        --sslnocache       Do not cache SSL sessions  \n"
+           "        --json             Output in JSON format      \n"
            "    -v, --version          Print version details      \n"
            "                                                      \n"
            "  Numeric arguments may include a SI unit (1k, 1M, 1G)\n"
@@ -136,9 +138,19 @@ int main(int argc, char **argv) {
     sigfillset(&sa.sa_mask);
     sigaction(SIGINT, &sa, NULL);
 
-    char *time = format_time_s(cfg.duration);
-    printf("Running %s test @ %s\n", time, url);
-    printf("  %"PRIu64" threads and %"PRIu64" connections\n", cfg.threads, cfg.connections);
+    cJSON *result = cJSON_CreateObject();
+
+    if (cfg.json) {
+        char *time = format_time_s(cfg.duration);
+        cJSON_AddStringToObject(result, "time_set", time);
+        cJSON_AddStringToObject(result, "url", url);
+        json_print(result, "threads", "%"PRIu64, cfg.threads);
+        json_print(result, "connections", "%"PRIu64, cfg.connections);
+    } else {
+        char *time = format_time_s(cfg.duration);
+        printf("Running %s test @ %s\n", time, url);
+        printf("  %"PRIu64" threads and %"PRIu64" connections\n", cfg.threads, cfg.connections);
+    }
 
     uint64_t start    = time_us();
     uint64_t complete = 0;
@@ -172,31 +184,65 @@ int main(int argc, char **argv) {
         stats_correct(statistics.latency, interval);
     }
 
-    print_stats_header();
-    print_stats("Latency", statistics.latency, format_time_us);
-    print_stats("Req/Sec", statistics.requests, format_metric);
-    if (cfg.latency) print_stats_latency(statistics.latency);
+    if (cfg.json) {
+        json_print_stats(result, "stat_latency", statistics.latency, format_time_us);
+        json_print_stats(result, "stat_rps", statistics.requests, format_metric);
+        if (cfg.latency) json_print_stats_latency(result, statistics.latency);
 
-    char *runtime_msg = format_time_us(runtime_us);
+        char *runtime_msg = format_time_us(runtime_us);
 
-    printf("  %"PRIu64" requests in %s, %sB read\n", complete, runtime_msg, format_binary(bytes));
-    if (errors.connect || errors.read || errors.write || errors.timeout) {
-        printf("  Socket errors: connect %d, read %d, write %d, timeout %d\n",
-               errors.connect, errors.read, errors.write, errors.timeout);
+        json_print(result, "requests", "%"PRIu64, complete);
+        json_print(result, "time_run", "%s", runtime_msg);
+        json_print(result, "read", "%sB", format_binary(bytes));
+
+        /* I/O errors */
+        if (errors.connect || errors.read || errors.write || errors.timeout) {
+            json_print(result, "error_connect", "%d", errors.connect);
+            json_print(result, "error_read", "%d", errors.read);
+            json_print(result, "error_write", "%d", errors.write);
+            json_print(result, "error_timeout", "%d", errors.timeout);
+        }
+
+        /* HTTP status errors */
+        if (errors.status) {
+            json_print(result, "error_status", "%d", errors.status);
+        }
+
+        json_print(result, "rps", "%.2Lf", req_per_s);
+        json_print(result, "bandwidth", "%sB/s", format_binary(bytes_per_s));
+
+        char *result_str = cJSON_Print(result);
+        fprintf(stderr, "%s\n", result_str);
+        free(result_str);
+    } else {
+        print_stats_header();
+        print_stats("Latency", statistics.latency, format_time_us);
+        print_stats("Req/Sec", statistics.requests, format_metric);
+        if (cfg.latency) print_stats_latency(statistics.latency);
+
+        char *runtime_msg = format_time_us(runtime_us);
+
+        printf("  %"PRIu64" requests in %s, %sB read\n", complete, runtime_msg, format_binary(bytes));
+        if (errors.connect || errors.read || errors.write || errors.timeout) {
+            printf("  Socket errors: connect %d, read %d, write %d, timeout %d\n",
+                    errors.connect, errors.read, errors.write, errors.timeout);
+        }
+
+        if (errors.status) {
+            printf("  Non-2xx or 3xx responses: %d\n", errors.status);
+        }
+
+        printf("Requests/sec: %9.2Lf\n", req_per_s);
+        printf("Transfer/sec: %10sB\n", format_binary(bytes_per_s));
     }
-
-    if (errors.status) {
-        printf("  Non-2xx or 3xx responses: %d\n", errors.status);
-    }
-
-    printf("Requests/sec: %9.2Lf\n", req_per_s);
-    printf("Transfer/sec: %10sB\n", format_binary(bytes_per_s));
 
     if (script_has_done(L)) {
         script_summary(L, runtime_us, complete, bytes);
         script_errors(L, &errors);
         script_done(L, statistics.latency, statistics.requests);
     }
+
+    cJSON_Delete(result);
 
     return 0;
 }
@@ -484,6 +530,7 @@ static struct option longopts[] = {
     { "header",      required_argument, NULL, 'H' },
     { "latency",     no_argument,       NULL, 'L' },
     { "sslnocache",  no_argument,       NULL, 'N' },
+    { "json",        no_argument,       NULL, 'J' },
     { "timeout",     required_argument, NULL, 'T' },
     { "help",        no_argument,       NULL, 'h' },
     { "version",     no_argument,       NULL, 'v' },
@@ -522,6 +569,9 @@ static int parse_args(struct config *cfg, char **url, struct http_parser_url *pa
                 break;
             case 'N':
                 cfg->sslnocache = true;
+                break;
+            case 'J':
+                cfg->json = true;
                 break;
             case 'T':
                 if (scan_time(optarg, &cfg->timeout)) return -1;
@@ -596,4 +646,49 @@ static void print_stats_latency(stats *stats) {
         print_units(n, format_time_us, 10);
         printf("\n");
     }
+}
+
+static void json_print(cJSON *res, const char *name, const char *fmt, ...) {
+    static char buffer[4096]; // 4K should be large enough...
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(buffer, sizeof(buffer), fmt, ap);
+    va_end(ap);
+    cJSON_AddStringToObject(res, name, buffer);
+}
+
+static void json_print_units(cJSON *res, const char *name, long double n, char *(*fmt)(long double)) {
+    char *msg = fmt(n);
+    cJSON_AddStringToObject(res, name, msg);
+    free(msg);
+}
+
+static void json_print_stats(cJSON *res, const char *name, stats *stats, char *(*fmt)(long double)) {
+    uint64_t max = stats->max;
+    long double mean  = stats_mean(stats);
+    long double stdev = stats_stdev(stats, mean);
+
+    cJSON *obj = cJSON_CreateObject();
+
+    json_print_units(obj, "mean",  mean,  fmt);
+    json_print_units(obj, "stdev", stdev, fmt);
+    json_print_units(obj, "max",   max,   fmt);
+    json_print(obj, "+/- stdev", "%.2Lf%%", stats_within_stdev(stats, mean, stdev, 1));
+
+    cJSON_AddItemToObject(res, name, obj);
+}
+
+static void json_print_stats_latency(cJSON *res, stats *stats) {
+    char *percentiles_str[] = { "50", "75", "90", "99" };
+    long double percentiles[] = { 50.0, 75.0, 90.0, 99.0 };
+
+    cJSON *obj = cJSON_CreateObject();
+
+    for (size_t i = 0; i < sizeof(percentiles) / sizeof(long double); i++) {
+        char *name = percentiles_str[i];
+        uint64_t n = stats_percentile(stats, percentiles[i]);
+        json_print_units(obj, name, n, format_time_us);
+    }
+
+    cJSON_AddItemToObject(res, "latency_distribution", obj);
 }
