@@ -44,6 +44,8 @@
         --timeout:     record a timeout if a response is not received within
                        this amount of time.
 
+        --sslnocache:  destroy SSL session after connection closed
+
 ## Benchmarking Tips
 
   The machine running wrk must have a sufficient number of ephemeral ports

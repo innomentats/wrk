@@ -13,6 +13,7 @@ static struct config {
     bool     delay;
     bool     dynamic;
     bool     latency;
+    bool     sslnocache;
     char    *host;
     char    *script;
     SSL_CTX *ctx;
@@ -52,6 +53,7 @@ static void usage() {
            "    -H, --header      <H>  Add header to request      \n"
            "        --latency          Print latency statistics   \n"
            "        --timeout     <T>  Socket/request timeout     \n"
+           "        --sslnocache       Do not cache SSL sessions  \n"
            "    -v, --version          Print version details      \n"
            "                                                      \n"
            "  Numeric arguments may include a SI unit (1k, 1M, 1G)\n"
@@ -267,6 +269,10 @@ static int reconnect_socket(thread *thread, connection *c) {
     aeDeleteFileEvent(thread->loop, c->fd, AE_WRITABLE | AE_READABLE);
     sock.close(c);
     close(c->fd);
+    if (cfg.sslnocache && cfg.ctx && c->ssl) {
+        SSL_free(c->ssl);
+        c->ssl = NULL;
+    }
     return connect_socket(thread, c);
 }
 
@@ -361,6 +367,10 @@ static int response_complete(http_parser *parser) {
 
 static void socket_connected(aeEventLoop *loop, int fd, void *data, int mask) {
     connection *c = data;
+
+    if (cfg.sslnocache && cfg.ctx && !c->ssl) {
+        c->ssl = SSL_new(cfg.ctx);
+    }
 
     switch (sock.connect(c, cfg.host)) {
         case OK:    break;
@@ -473,6 +483,7 @@ static struct option longopts[] = {
     { "script",      required_argument, NULL, 's' },
     { "header",      required_argument, NULL, 'H' },
     { "latency",     no_argument,       NULL, 'L' },
+    { "sslnocache",  no_argument,       NULL, 'N' },
     { "timeout",     required_argument, NULL, 'T' },
     { "help",        no_argument,       NULL, 'h' },
     { "version",     no_argument,       NULL, 'v' },
@@ -508,6 +519,9 @@ static int parse_args(struct config *cfg, char **url, struct http_parser_url *pa
                 break;
             case 'L':
                 cfg->latency = true;
+                break;
+            case 'N':
+                cfg->sslnocache = true;
                 break;
             case 'T':
                 if (scan_time(optarg, &cfg->timeout)) return -1;
