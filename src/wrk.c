@@ -14,7 +14,7 @@ static struct config {
     bool     dynamic;
     bool     latency;
     bool     sslnocache;
-    bool     json;
+    char    *json;
     char    *host;
     char    *script;
     SSL_CTX *ctx;
@@ -185,8 +185,8 @@ int main(int argc, char **argv) {
     }
 
     if (cfg.json) {
-        json_print_stats(result, "stat_latency", statistics.latency, format_time_us);
-        json_print_stats(result, "stat_rps", statistics.requests, format_metric);
+        json_print_stats(result, "thread_stat_latency", statistics.latency, format_time_us);
+        json_print_stats(result, "thread_stat_rps", statistics.requests, format_metric);
         if (cfg.latency) json_print_stats_latency(result, statistics.latency);
 
         char *runtime_msg = format_time_us(runtime_us);
@@ -212,7 +212,13 @@ int main(int argc, char **argv) {
         json_print(result, "bandwidth", "%sB/s", format_binary(bytes_per_s));
 
         char *result_str = cJSON_Print(result);
-        fprintf(stderr, "%s\n", result_str);
+        FILE *json_file = fopen(cfg.json, "w");
+        if (json_file) {
+            fprintf(json_file, "%s\n", result_str);
+            fclose(json_file);
+        } else {
+            fprintf(stderr, "Cannot open stat file: %s\n", cfg.json);
+        }
         free(result_str);
     } else {
         print_stats_header();
@@ -530,7 +536,7 @@ static struct option longopts[] = {
     { "header",      required_argument, NULL, 'H' },
     { "latency",     no_argument,       NULL, 'L' },
     { "sslnocache",  no_argument,       NULL, 'N' },
-    { "json",        no_argument,       NULL, 'J' },
+    { "json",        required_argument, NULL, 'J' },
     { "timeout",     required_argument, NULL, 'T' },
     { "help",        no_argument,       NULL, 'h' },
     { "version",     no_argument,       NULL, 'v' },
@@ -571,7 +577,7 @@ static int parse_args(struct config *cfg, char **url, struct http_parser_url *pa
                 cfg->sslnocache = true;
                 break;
             case 'J':
-                cfg->json = true;
+                cfg->json = optarg;
                 break;
             case 'T':
                 if (scan_time(optarg, &cfg->timeout)) return -1;

@@ -9,11 +9,15 @@ wrk
   SSL handshake performance, e.g.
 
 ```
-  wrk -t12 -c400 -d30s --sslnocache -H "Connection: close" https://127.0.0.1/
+  wrk -t2 -c400 -d30s --sslnocache -H "Connection: close" https://127.0.0.1/
 ```
 
   * JSON output format. Add `--json` option to enable output statistics in
   JSON format.
+
+```
+  wrk -t2 -c400 -d30s --json /dev/stdout http://127.0.0.1/
+```
 
 ## wrk - a HTTP benchmarking tool
 
