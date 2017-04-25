@@ -209,7 +209,7 @@ int main(int argc, char **argv) {
         }
 
         json_print(result, "rps", "%.2Lf", req_per_s);
-        json_print(result, "bandwidth", "%sB/s", format_binary(bytes_per_s));
+        json_print(result, "bandwidth", "%sB", format_binary(bytes_per_s));
 
         char *result_str = cJSON_Print(result);
         FILE *json_file = fopen(cfg.json, "w");

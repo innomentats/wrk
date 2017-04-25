@@ -35,7 +35,7 @@ units binary_units = {
 units metric_units = {
     .scale = 1000,
     .base  = "",
-    .units = { "k", "M", "G", "T", "P", NULL }
+    .units = { "K", "M", "G", "T", "P", NULL }
 };
 
 static char *format_units(long double n, units *m, int p) {
