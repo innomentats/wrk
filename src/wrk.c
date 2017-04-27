@@ -146,11 +146,11 @@ int main(int argc, char **argv) {
         cJSON_AddStringToObject(result, "url", url);
         json_print(result, "threads", "%"PRIu64, cfg.threads);
         json_print(result, "connections", "%"PRIu64, cfg.connections);
-    } else {
-        char *time = format_time_s(cfg.duration);
-        printf("Running %s test @ %s\n", time, url);
-        printf("  %"PRIu64" threads and %"PRIu64" connections\n", cfg.threads, cfg.connections);
     }
+
+    char *time = format_time_s(cfg.duration);
+    printf("Running %s test @ %s\n", time, url);
+    printf("  %"PRIu64" threads and %"PRIu64" connections\n", cfg.threads, cfg.connections);
 
     uint64_t start    = time_us();
     uint64_t complete = 0;
@@ -182,6 +182,32 @@ int main(int argc, char **argv) {
     if (complete / cfg.connections > 0) {
         int64_t interval = runtime_us / (complete / cfg.connections);
         stats_correct(statistics.latency, interval);
+    }
+
+    print_stats_header();
+    print_stats("Latency", statistics.latency, format_time_us);
+    print_stats("Req/Sec", statistics.requests, format_metric);
+    if (cfg.latency) print_stats_latency(statistics.latency);
+
+    char *runtime_msg = format_time_us(runtime_us);
+
+    printf("  %"PRIu64" requests in %s, %sB read\n", complete, runtime_msg, format_binary(bytes));
+    if (errors.connect || errors.read || errors.write || errors.timeout) {
+        printf("  Socket errors: connect %d, read %d, write %d, timeout %d\n",
+                errors.connect, errors.read, errors.write, errors.timeout);
+    }
+
+    if (errors.status) {
+        printf("  Non-2xx or 3xx responses: %d\n", errors.status);
+    }
+
+    printf("Requests/sec: %9.2Lf\n", req_per_s);
+    printf("Transfer/sec: %10sB\n", format_binary(bytes_per_s));
+
+    if (script_has_done(L)) {
+        script_summary(L, runtime_us, complete, bytes);
+        script_errors(L, &errors);
+        script_done(L, statistics.latency, statistics.requests);
     }
 
     if (cfg.json) {
@@ -220,32 +246,6 @@ int main(int argc, char **argv) {
             fprintf(stderr, "Cannot open stat file: %s\n", cfg.json);
         }
         free(result_str);
-    } else {
-        print_stats_header();
-        print_stats("Latency", statistics.latency, format_time_us);
-        print_stats("Req/Sec", statistics.requests, format_metric);
-        if (cfg.latency) print_stats_latency(statistics.latency);
-
-        char *runtime_msg = format_time_us(runtime_us);
-
-        printf("  %"PRIu64" requests in %s, %sB read\n", complete, runtime_msg, format_binary(bytes));
-        if (errors.connect || errors.read || errors.write || errors.timeout) {
-            printf("  Socket errors: connect %d, read %d, write %d, timeout %d\n",
-                    errors.connect, errors.read, errors.write, errors.timeout);
-        }
-
-        if (errors.status) {
-            printf("  Non-2xx or 3xx responses: %d\n", errors.status);
-        }
-
-        printf("Requests/sec: %9.2Lf\n", req_per_s);
-        printf("Transfer/sec: %10sB\n", format_binary(bytes_per_s));
-    }
-
-    if (script_has_done(L)) {
-        script_summary(L, runtime_us, complete, bytes);
-        script_errors(L, &errors);
-        script_done(L, statistics.latency, statistics.requests);
     }
 
     cJSON_Delete(result);
